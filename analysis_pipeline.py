@@ -1,23 +1,28 @@
 import os
 import pandas as pd
-import concurrent.futures
+import multiprocessing
 from tqdm import tqdm
 from helper import (create_tree, get_induced_donor, make_all_sampled_trees,
                     compute_spr_for_all_pairs, classify_sprs)
 from ete3 import Tree
+import time
 
-def process_ablated_tree(args):
+def process_ablated_tree(node_name, ablated_trees_dir, output_dir, induced_donor, compute_spr_bin):
     """
     Process a single ablated tree (for parallel execution).
     
     Args:
-        args: Tuple containing (node_name, ablated_tree_path, output_dir, induced_donor, compute_spr_bin)
+        node_name: Name of the node that was removed
+        ablated_trees_dir: Directory containing ablated trees
+        output_dir: Directory to store results
+        induced_donor: Induced donor for this node
+        compute_spr_bin: Path to the SPR computation binary
         
     Returns:
         DataFrame with SPR classifications for this ablated tree
     """
-    print(f"currently processing {args}")
-    node_name, ablated_tree_path, output_dir, induced_donor, compute_spr_bin = args
+    start_time = time.time()
+    ablated_tree_path = os.path.join(ablated_trees_dir, f"sampled_tree_{node_name}.newick")
     
     # Skip if the ablated tree does not exist
     if not os.path.exists(ablated_tree_path):
@@ -38,30 +43,22 @@ def process_ablated_tree(args):
     
     # Add the induced donor information
     classification_df["induced_donor"] = induced_donor
-    return classification_df
+    
+    # Save individual result to avoid memory issues with large datasets
+    result_path = os.path.join(output_dir, f"spr_classification_{node_name}.csv")
+    classification_df.to_csv(result_path, index=False)
+    
+    elapsed = time.time() - start_time
+    return {
+        "node_name": node_name,
+        "elapsed_time": elapsed,
+        "num_classifications": len(classification_df) if not classification_df.empty else 0
+    }
 
 def run_complete_analysis(output_dir, num_extant_tips=20, birth_rate=1.0, death_rate=1.0, 
                           seed=42, compute_spr_bin=None, max_workers=None):
     """
-    Run a complete analysis pipeline:
-    1. Create a tree and save it
-    2. For each removable clade, find the induced donor
-    3. Create ablated trees for all possible clades
-    4. For each ablated tree, compute all possible SPRs (in parallel)
-    5. Classify SPRs by topology
-    6. Combine all results into a single dataframe
-    
-    Args:
-        output_dir: Directory to store all results
-        num_extant_tips: Number of tips for the tree
-        birth_rate: Birth rate for the birth-death process
-        death_rate: Death rate for the birth-death process
-        seed: Random seed
-        compute_spr_bin: Path to the SPR computation binary
-        max_workers: Maximum number of worker threads (None uses all available cores)
-        
-    Returns:
-        DataFrame with all SPR classifications and the corresponding removed nodes
+    Run a complete analysis pipeline with simple process-based parallelism
     """
     if compute_spr_bin is None:
         raise ValueError("Path to the SPR computation binary must be provided.")
@@ -92,46 +89,70 @@ def run_complete_analysis(output_dir, num_extant_tips=20, birth_rate=1.0, death_
     # Step 4 & 5: For each ablated tree, compute SPRs and classify them (in parallel)
     print(f"Processing {len(list_nodes_to_test)} ablated trees in parallel...")
     
-    # Prepare arguments for parallel processing
-    process_args = []
-    for node_name in list_nodes_to_test:
-        ablated_tree_path = os.path.join(ablated_trees_dir, f"sampled_tree_{node_name}.newick")
-        process_args.append((
-            node_name,
-            ablated_tree_path,
-            output_dir,
-            induced_donors.get(node_name, None),
-            compute_spr_bin
-        ))
+    # If max_workers not specified, use CPU count - 1 (leave one core for system)
+    if max_workers is None:
+        max_workers = max(1, multiprocessing.cpu_count() - 1)
     
-    # Process ablated trees in parallel with a progress bar
-    all_classifications = []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        # Submit all tasks and get future objects
-        future_to_node = {executor.submit(process_ablated_tree, arg): arg[0] for arg in process_args}
+    print(f"Using {max_workers} worker processes")
+    
+    # Create tasks with correct induced donors
+    tasks = [
+        (node, ablated_trees_dir, output_dir, induced_donors.get(node, None), compute_spr_bin) 
+        for node in list_nodes_to_test
+    ]
+    
+    all_stats = []
+    
+    # Process all tasks at once with process pool
+    with multiprocessing.Pool(processes=max_workers) as pool:
+        # Execute in parallel with progress bar
+        for result in tqdm(
+            pool.starmap(process_ablated_tree, tasks),
+            total=len(tasks),
+            desc="Processing ablated trees"
+        ):
+            if result:
+                all_stats.append(result)
+    
+    # Print statistics
+    if all_stats:
+        print("\nProcessing statistics:")
+        total_time = sum(stat["elapsed_time"] for stat in all_stats)
+        total_classifications = sum(stat["num_classifications"] for stat in all_stats)
         
-        # Process results as they complete with a progress bar
-        for future in tqdm(concurrent.futures.as_completed(future_to_node), 
-                          total=len(future_to_node),
-                          desc="Processing ablated trees"):
-            node_name = future_to_node[future]
+        print(f"Total processing time: {total_time:.2f} seconds")
+        print(f"Total classifications: {total_classifications}")
+        print(f"Average time per node: {total_time/len(all_stats):.2f} seconds")
+    
+    # Step 6: Combine all classifications from individual CSV files
+    print("Combining all classification results...")
+    classification_files = [
+        os.path.join(output_dir, f"spr_classification_{node}.csv") 
+        for node in list_nodes_to_test
+    ]
+    
+    # Only read files that exist
+    existing_files = [f for f in classification_files if os.path.exists(f)]
+    
+    if existing_files:
+        # Read and combine all CSV files
+        dfs = []
+        for file in tqdm(existing_files, desc="Reading classification files"):
             try:
-                result = future.result()
-                if result is not None and not result.empty:
-                    all_classifications.append(result)
+                df = pd.read_csv(file)
+                dfs.append(df)
             except Exception as e:
-                print(f"Error processing ablated tree for node {node_name}: {e}")
-    
-    # Step 6: Combine all classifications into a single dataframe
-    if all_classifications:
-        combined_df = pd.concat(all_classifications, ignore_index=True)
+                print(f"Error reading {file}: {e}")
         
-        # Save the combined results
-        output_path = os.path.join(output_dir, "combined_spr_classifications.csv")
-        combined_df.to_csv(output_path, index=False)
-        
-        print(f"Analysis complete. Results saved to {output_path}")
-        return combined_df
+        if dfs:
+            combined_df = pd.concat(dfs, ignore_index=True)
+            
+            # Save the combined results
+            output_path = os.path.join(output_dir, "combined_spr_classifications.csv")
+            combined_df.to_csv(output_path, index=False)
+            
+            print(f"Analysis complete. Results saved to {output_path}")
+            return combined_df
     
     print("No classifications were found.")
     return pd.DataFrame()  # Return empty dataframe if no classifications were found
@@ -139,6 +160,12 @@ def run_complete_analysis(output_dir, num_extant_tips=20, birth_rate=1.0, death_
 if __name__ == "__main__":
     # Example usage
     output_dir = "/home/enzo/Documents/git/ghost_experiments/analyse_undated/results"
+    num_extant_tips = 10
     compute_spr_bin = "./make_spr"
-    # Use 4 worker threads - adjust as needed
-    run_complete_analysis(output_dir, compute_spr_bin=compute_spr_bin, max_workers=1)
+    
+    # Use process-based parallelism with automatic core detection
+    run_complete_analysis(
+        output_dir, 
+        num_extant_tips=num_extant_tips,
+        compute_spr_bin=compute_spr_bin,
+    )

@@ -153,9 +153,9 @@ def compute_spr_for_all_pairs(tree_path, output_dir, compute_spr_bin):
         if not node_1.is_root():
             node_1_ancestors = node_1.get_ancestors()
             for node_2 in tree.traverse():
-                if not node_2 in node_1_ancestors:
+                if not node_2 in node_1_ancestors and not node_2==node_1:
                     pairs.append((node_1.name, node_2.name))
-    # Create output directory
+
     os.makedirs(output_dir, exist_ok=True)
     # Compute SPR for each pair
     for donor, receiver in pairs:
