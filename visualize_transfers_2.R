@@ -59,16 +59,16 @@ for (target_removed_node in unique_removed_nodes) {
     }
     # cat("Dimension of sub_df (filtered by removed_node):", dim(sub_df), "\n") # Less verbose
 
-    # 2. Calculate counts based on BOTH topology_id AND receiver within the FULL filtered subset (sub_df)
-    topology_receiver_counts <- sub_df %>%
-      group_by(topology_id, receiver) %>%
+    # 2. Calculate counts based on only topology_id within the FULL filtered subset (sub_df)
+    topology_counts <- sub_df %>%
+      group_by(topology_id) %>%
       summarise(transfer_count = n(), .groups = 'drop')
 
     # 3. Prepare the data SPECIFICALLY for plotting:
     plot_transfers <- sub_df %>%
       filter(donor == induced_donor) %>%
       select(topology_id, induced_donor, receiver) %>%
-      left_join(topology_receiver_counts, by = c("topology_id", "receiver")) %>%
+      left_join(topology_counts, by = "topology_id") %>%
       filter(!is.na(transfer_count)) %>%
       rename(from_label = induced_donor, to_label = receiver) %>%
       distinct(from_label, to_label, topology_id, transfer_count, .keep_all = TRUE)
