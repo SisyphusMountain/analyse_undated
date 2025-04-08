@@ -7,6 +7,7 @@ from helper import (create_tree, get_induced_donor, make_all_sampled_trees,
 from ete3 import Tree
 import time
 
+
 def process_ablated_tree(node_name, ablated_trees_dir, output_dir, induced_donor, compute_spr_bin):
     """
     Process a single ablated tree (for parallel execution).
@@ -67,17 +68,18 @@ def run_complete_analysis(output_dir, num_extant_tips=20, birth_rate=1.0, death_
     os.makedirs(output_dir, exist_ok=True)
 
     # Step 1: Create a tree and save it
-    tree_path = os.path.join(output_dir, "original_tree.nwk")
-    create_tree(tree_path, num_extant_tips, birth_rate, death_rate, seed)
+    # tree_path = os.path.join(output_dir, "original_tree.nwk")
+    # create_tree(tree_path, num_extant_tips, birth_rate, death_rate, seed)
     
     # Step 2: Find induced donors for each removable clade
+    tree_path = "/home/enzo/Documents/git/ghost_experiments/analyse_undated/cyano_renamed.nwk"
     tree = Tree(tree_path, format=1)
     induced_donors = {}
     list_nodes_to_test = []
     
     root_children = tree.get_children()
     for node in tree.traverse():
-        if not node.is_root() and node not in root_children:
+        if not node.is_root():
             list_nodes_to_test.append(node.name)
             induced_donors[node.name] = get_induced_donor(tree_path, node.name)
     
