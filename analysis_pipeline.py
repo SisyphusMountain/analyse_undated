@@ -64,8 +64,15 @@ def run_complete_analysis(output_dir, num_extant_tips=20, birth_rate=1.0, death_
     if compute_spr_bin is None:
         raise ValueError("Path to the SPR computation binary must be provided.")
 
-    # Create output directory if it doesn't exist
+    # Create output directory if it doesn't exist. If it exists, remove it first
+    if os.path.exists(output_dir):
+        print(f"Output directory {output_dir} already exists. Removing it...")
+        # Remove the directory and all its contents
+        import shutil
+        shutil.rmtree(output_dir)
+    # Create a new output directory
     os.makedirs(output_dir, exist_ok=True)
+    # clean the directory
 
     # Step 1: Create a tree and save it
     # tree_path = os.path.join(output_dir, "original_tree.nwk")

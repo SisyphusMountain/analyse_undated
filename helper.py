@@ -62,9 +62,9 @@ def get_sampled_tree(tree_path, node_name):
 def make_all_sampled_trees(tree_path, output_folder):
     tree = Tree(tree_path, format=1)
     list_nodes_to_test = []
-    root_children = tree.get_children()
+    # root_children = tree.get_children()
     for node in tree.traverse():
-        if not node.is_root() and node not in root_children:
+        if not node.is_root():
             list_nodes_to_test.append(node.name)
     
     for node in list_nodes_to_test:
@@ -146,7 +146,10 @@ def compute_spr_for_all_pairs(tree_path, output_dir, compute_spr_bin):
     """
     Compute SPR for all pairs of nodes in the tree.
     """
+    from tqdm import tqdm
+    
     tree = Tree(tree_path, format=1)
+    tree_len = len(tree)
     
     pairs = []
     for node_1 in tree.traverse():
@@ -158,9 +161,18 @@ def compute_spr_for_all_pairs(tree_path, output_dir, compute_spr_bin):
 
     os.makedirs(output_dir, exist_ok=True)
     # Compute SPR for each pair
-    for donor, receiver in pairs:
+    for donor, receiver in tqdm(pairs, desc="Computing SPR operations"):
         output_path = os.path.join(output_dir, f"{donor}_{receiver}.newick")
-        compute_spr(tree_path, donor, receiver, output_path, compute_spr_bin)
+        success = compute_spr(tree_path, donor, receiver, output_path, compute_spr_bin)
+        
+        # Check that the resulting tree has the same length as the original tree
+        if success:
+            try:
+                output_tree = Tree(output_path, format=1)
+                if len(output_tree) != tree_len:
+                    print(f"Warning: Output tree for {donor}->{receiver} has different size ({len(output_tree)}) than original tree ({tree_len})")
+            except Exception as e:
+                print(f"Error reading output tree for {donor}->{receiver}: {str(e)}")
 
 def are_isomorphic(tree1, tree2):
     """
@@ -171,8 +183,13 @@ def are_isomorphic(tree1, tree2):
 
 def classify_sprs(spr_dir):
     # We classify the spr results according to their unrooted topology
+    from tqdm import tqdm
+    
+    # Get list of SPR files first to show proper progress
+    spr_files = [f for f in os.listdir(spr_dir) if "_" in f and f.endswith(".newick")]
+    
     spr_classification = defaultdict(list)
-    for spr_file in os.listdir(spr_dir):
+    for spr_file in tqdm(spr_files, desc="Classifying SPR operations"):
         # match to the format "{donor}_{receiver}.newick"
         match = spr_file.split("_")
         if len(match) != 2:
@@ -192,6 +209,7 @@ def classify_sprs(spr_dir):
                 break
         if not found:
             spr_classification[tree] = [(donor, receiver)]
+    
     # Now we need to write the classification to a table, containing the donor, the receiver, and an identifier for the
     # topology
     classification_table = []

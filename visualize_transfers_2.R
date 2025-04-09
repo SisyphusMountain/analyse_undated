@@ -1,6 +1,6 @@
 # --- Configuration ---
 csv_file <- "results/combined_spr_classifications.csv" # Path to your CSV data
-tree_file <- "results/original_tree.nwk"                      # Path to your Newick tree file
+tree_file <- "cyano_renamed.nwk"                      # Path to your Newick tree file
 output_pdf_file <- "all_removed_node_plots_unit_branch.pdf" # Updated PDF name
 
 # --- Load Libraries ---
@@ -156,27 +156,32 @@ for (target_removed_node in unique_removed_nodes) {
       select(-isTip) %>%
       filter(!is.na(from_node), !is.na(to_node))
 
-    # Check if there are any transfers left to plot for this specific node
-    if (nrow(plot_data_coords) > 0) {
+    # <<< --- FILTER OUT TRANSFERS WITH COUNT == 1 --- <<<
+    plot_data_coords_filtered <- plot_data_coords %>%
+        filter(transfer_count > 1)
+    cat("Plotting", nrow(plot_data_coords_filtered), "transfers (count > 1).\n")
+    # >>> --------------------------------------------->>>
+
+    # Check if there are any transfers left to plot AFTER filtering
+    if (nrow(plot_data_coords_filtered) > 0) {
       # cat("Plotting", nrow(plot_data_coords), "transfers.\n") # Less verbose
       p <- p + ggnewscale::new_scale_color() # Introduce new color scale for arrows
 
       p <- p +
-        geom_segment(data = plot_data_coords,
+        geom_segment(data = plot_data_coords_filtered, # <-- Use filtered data
                      aes(x = x_start, y = y_start, xend = x_end, yend = y_end,
-                         color = factor(transfer_count), # Arrow color based on count
-                         linetype = ifelse(transfer_count == 1, "dashed", "solid")), # Arrow linetype based on count
+                         color = factor(transfer_count)), # Arrow color based on count
+                         # Linetype removed - all are solid now
                      arrow = arrow(length = unit(0.1, "inches"), type = "closed", angle = 20), # Smaller arrow
-                     linewidth = 0.6) + # Thinner arrows
+                     linewidth = 0.6, # Thinner arrows
+                     linetype = "solid") + # Explicitly set linetype to solid
         # Use a discrete color scale for the ARROWS
-        scale_color_viridis_d(option = "D", name = "Transfers") + # Simpler legend title
-        # Use linetype values directly for arrows and hide its legend
-        scale_linetype_identity(guide = "none")
+        scale_color_viridis_d(option = "D", name = "Transfers") # Simpler legend title
+        # Removed scale_linetype_identity()
 
     } else {
-      cat("No valid transfers found to plot for removed_node =", target_removed_node, "\n")
-      # Add dummy scale to avoid potential errors later if no arrows drawn
-      p <- p + scale_linetype_identity(guide = "none")
+      cat("No valid transfers with count > 1 found to plot for removed_node =", target_removed_node, "\n")
+      # No need for dummy scale here anymore
     }
 
     # Add title and theme elements
