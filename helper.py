@@ -53,6 +53,13 @@ def join_branch(node):
 def get_sampled_tree(tree_path, node_name):
     """Create a tree with the specified node removed."""
     tree = Tree(tree_path, format=1)
+    # if the node is a child of the root, the result is just the sister node
+    left_root_child, right_root_child = tree.get_children()
+    if left_root_child.name == node_name:
+        return right_root_child
+    elif right_root_child.name == node_name:
+        return left_root_child
+    # otherwise, detach the node and its descendants
     tree = detach_group(tree, node_name)
     for node in tree.traverse():
         if len(node.children) == 1:

@@ -31,6 +31,10 @@ def process_ablated_tree(node_name, ablated_trees_dir, output_dir, induced_donor
     
     # Create a directory for SPR results for this ablated tree
     spr_dir = os.path.join(output_dir, f"spr_results_{node_name}")
+    if os.path.exists(spr_dir):
+        return {"node_name": node_name,
+                "elapsed_time": 0,
+                "num_classifications": 0}
     os.makedirs(spr_dir, exist_ok=True)
     
     # Compute all possible SPRs for this ablated tree
@@ -66,13 +70,12 @@ def run_complete_analysis(output_dir, num_extant_tips=20, birth_rate=1.0, death_
 
     # Create output directory if it doesn't exist. If it exists, remove it first
     if os.path.exists(output_dir):
-        print(f"Output directory {output_dir} already exists. Removing it...")
+        #print(f"Output directory {output_dir} already exists. Removing it...")
         # Remove the directory and all its contents
         import shutil
-        shutil.rmtree(output_dir)
+        #shutil.rmtree(output_dir)
     # Create a new output directory
     os.makedirs(output_dir, exist_ok=True)
-    # clean the directory
 
     # Step 1: Create a tree and save it
     # tree_path = os.path.join(output_dir, "original_tree.nwk")
@@ -84,7 +87,7 @@ def run_complete_analysis(output_dir, num_extant_tips=20, birth_rate=1.0, death_
     induced_donors = {}
     list_nodes_to_test = []
     
-    root_children = tree.get_children()
+    # root_children = tree.get_children()
     for node in tree.traverse():
         if not node.is_root():
             list_nodes_to_test.append(node.name)
